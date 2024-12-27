@@ -5,9 +5,10 @@ from file_utils import read_file_with_encodings
 from translator import translate_message
 from template_generator import format_error_template
 from error_parser import process_pck_file
-
+import time
 
 def main():
+    start = time.time()
     """Main function to process .~pck files and generate templates."""
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     
@@ -43,6 +44,8 @@ def main():
                     out_file.write(template + "\n")
                     
             logging.info(f"Successfully processed {file_name} and generated {output_path}")
+            end = time.time()
+            print(end - start)
         except Exception as e:
             logging.error(f"Failed to process {file_name}: {str(e)}")
 
