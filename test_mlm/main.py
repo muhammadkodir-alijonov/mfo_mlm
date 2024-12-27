@@ -2,9 +2,10 @@ import os
 import logging
 from config import INPUT_DIR, OUTPUT_DIR
 from file_utils import read_file_with_encodings
-from error_parser import process_pck_file
 from translator import translate_message
 from template_generator import format_error_template
+from error_parser import process_pck_file
+
 
 def main():
     """Main function to process .~pck files and generate templates."""
