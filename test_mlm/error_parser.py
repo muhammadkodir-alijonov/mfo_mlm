@@ -26,50 +26,71 @@ def format_parameter(param_num: int) -> str:
 
 
 def extract_error_message(stmt: str) -> Optional[str]:
-    """Extract and format error message with parameters"""
+    """Extract and format error message with parameters - improved version"""
     try:
         # Clean up the statement first
         stmt = stmt.replace('\n', ' ').replace('\r', ' ')
         stmt = re.sub(r'\s+', ' ', stmt)
 
         # Remove common prefixes and suffixes
-        stmt = re.sub(r'^(vMessage|result)\s*:=\s*', '', stmt, flags=re.IGNORECASE)
+        stmt = re.sub(r'^(vMessage|result|Omessage)\s*:=\s*', '', stmt, flags=re.IGNORECASE)
         stmt = re.sub(r'return\s+\w+\s*;$', '', stmt, flags=re.IGNORECASE)
         stmt = re.sub(r'raise\s+\w+\s*;$', '', stmt, flags=re.IGNORECASE)
 
-        # Handle CASE WHEN structure
-        if 'case' in stmt.lower() and 'when' in stmt.lower():
-            pattern = r"when\s+'([^']+)'\s+then\s+'([^']+)'"
-            matches = re.finditer(pattern, stmt, re.IGNORECASE)
-            cases = {}
-            for match in matches:
-                cases[match.group(1)] = match.group(2)
+        # Special handling for Raise_Application_Error with to_char
+        if 'Raise_Application_Error' in stmt and 'to_char' in stmt:
+            # Extract the message parts and parameters
+            parts = re.split(r'\|\s*\|', stmt)
+            message_parts = []
+            param_counter = 1
 
-            else_pattern = r"else\s+'([^']+)'"
-            else_match = re.search(else_pattern, stmt, re.IGNORECASE)
-            if else_match:
-                cases['else'] = else_match.group(1)
-            return str(cases)
+            for part in parts:
+                part = part.strip()
+                # Handle to_char function specially
+                if 'to_char' in part:
+                    message_parts.append(format_parameter(param_counter))
+                    param_counter += 1
+                    continue
 
-        # Split by concatenation operator
+                # Extract quoted text or parameter references
+                quote_match = re.search(r"'([^']+)'", part)
+                if quote_match:
+                    cleaned_text = clean_quotes(quote_match.group(1))
+                    if cleaned_text:
+                        message_parts.append(cleaned_text)
+                elif not part.startswith("'") and not part.endswith("'"):
+                    if not any(keyword in part.lower() for keyword in
+                               ['raise_application_error', '-20000']):
+                        message_parts.append(format_parameter(param_counter))
+                        param_counter += 1
+
+            result = ' '.join(message_parts)
+            return result if result else None
+
+        # Handle regular concatenated messages
         parts = re.split(r'\|\s*\|', stmt)
         message_parts = []
         param_counter = 1
 
         for part in parts:
             part = part.strip()
+            # Handle Ut.Ccrlf specially
+            if 'Ut.Ccrlf' in part:
+                message_parts.append('\n')
+                continue
+
             quote_match = re.search(r"'([^']+)'", part)
             if quote_match:
                 cleaned_text = clean_quotes(quote_match.group(1))
                 if cleaned_text:
                     message_parts.append(cleaned_text)
-            # Handle parameters
-            elif not any(keyword in part.lower() for keyword in
-                         ['raise_application_error', 'result', 'raise','vmessage','Omessage','oMessage']):
+            elif not part.startswith("'") and not part.endswith("'"):
                 clean_part = clean_quotes(part)
                 if clean_part and not clean_part.isspace():
-                    message_parts.append(format_parameter(param_counter))
-                    param_counter += 1
+                    if not any(keyword in clean_part.lower() for keyword in
+                               ['raise_application_error', 'result', 'raise', 'vmessage', 'omessage']):
+                        message_parts.append(format_parameter(param_counter))
+                        param_counter += 1
 
         # Join all parts and clean up spaces
         result = ' '.join(part for part in message_parts if part)
@@ -79,6 +100,41 @@ def extract_error_message(stmt: str) -> Optional[str]:
     except Exception as e:
         logging.error(f"Error extracting message: {str(e)}")
         return None
+
+
+def parse_error_params(stmt: str) -> List[str]:
+    """Extract parameters from concatenated error message with improved handling"""
+    params = []
+    # Handle to_char function calls
+    to_char_matches = re.finditer(r'to_char\([^)]+\)', stmt)
+    for match in to_char_matches:
+        params.append(match.group(0))
+
+    # Remove string literals and process remaining parts
+    stmt = re.sub(r"'[^']*'", "", stmt)
+    stmt = re.sub(r'to_char\([^)]+\)', '', stmt)  # Remove already processed to_char calls
+
+    # Split by concatenation operator
+    parts = re.split(r'\|\s*\|', stmt)
+
+    for part in parts:
+        part = part.strip()
+        if not part or any(keyword in part.lower() for keyword in
+                           ['raise_application_error', 'result', 'raise', 'vmessage', 'omessage', '-20000',
+                            'ut.ccrlf']):
+            continue
+
+        # Handle nested function calls and object references
+        if '.' in part:
+            clean_part = part.strip().rstrip('!')
+            if clean_part and not clean_part.isspace():
+                params.append(clean_part)
+        elif not part.startswith("'") and not part.endswith("'"):
+            clean_part = part.strip().rstrip('!')
+            if clean_part and not clean_part.isspace():
+                params.append(clean_part)
+
+    return [p for p in params if p]
 
 
 def process_pck_file(content: str) -> List[Tuple[str, int]]:
@@ -102,7 +158,10 @@ def process_pck_file(content: str) -> List[Tuple[str, int]]:
                 "result :=",
                 "Ut.Raise_Err",
                 "Omessage :=",
-                "oMessage :="
+                "oMessage :=",
+                "Em.Raise_Error_If",
+                "Em.Raise_Error",
+                "Em.Raise_Exception"
             ]):
                 in_error_block = True
                 start_line = line_num if not start_line else start_line
@@ -124,46 +183,6 @@ def process_pck_file(content: str) -> List[Tuple[str, int]]:
 
     return errors
 
-def parse_error_params(stmt: str) -> List[str]:
-    """Extract parameters from concatenated error message"""
-    params = []
-    parts = re.split(r'\|\s*\|', stmt)
-
-    for part in parts:
-        part = part.strip()
-        # Skip string literals
-        if not re.search(r"'[^']+'", part):
-            # Clean and check if it's a parameter
-            clean_part = part.strip().replace('(', '').replace(')', '')
-            if clean_part and not any(keyword in clean_part.lower() for keyword in
-                                      ['raise_application_error', 'result', 'raise', 'vmessage', 'omessage']):
-                params.append(clean_part)
-
-    return params
-
-
-def generate_mlm_replacement(message_name: str, original_stmt: str, params: List[str] = None) -> str:
-    """
-    Generate MLM message call replacement while preserving the original variable name.
-
-    Args:
-        message_name: The generated message name for MLM
-        original_stmt: The original error statement to extract variable name from
-        params: List of parameters if any
-    """
-    # Extract the variable name from the original statement
-    var_match = re.match(r'(\w+)\s*:=', original_stmt)
-    if not var_match:
-        # Default to Omessage if no match found
-        variable_name = "Omessage"
-    else:
-        variable_name = var_match.group(1)
-
-    if not params:
-        return f"{variable_name} := mlm.Get_Message(i_Module_Code => 'LN', i_Message_Name => '{message_name}')"
-
-    param_array = f"array_varchar({', '.join(params)})"
-    return f"{variable_name} := mlm.Get_Message(i_Module_Code => 'LN', i_Message_Name => '{message_name}', i_Params => {param_array})"
 
 def process_pck_content(content: str, message_mappings: dict) -> str:
     """
@@ -215,25 +234,25 @@ def generate_mlm_raise_error(message_name: str, params: List[str] = None) -> str
 
 
 def modify_error_statement(content: str, message_name: str) -> Tuple[str, int, int]:
-    """
-    Modify error statement in the content.
-    Returns: (modified_content, start_position, end_position)
-    """
-    # Define patterns for both raise errors and message assignments
+    """Modify error statement with improved pattern matching"""
+    # Enhanced patterns to handle multi-line statements
     raise_patterns = [
-        r"Raise_Application_Error\s*\([^;]+;",
-        r"Ut\.Raise_Err\s*\([^;]+;"
+        r"Raise_Application_Error\s*\([^;]+?;",  # Non-greedy match
+        r"Em.Raise_Error_If\s*\([^;]+?;",  # Non-greedy match
+        r"Em.Raise_Error\s*\([^;]+?;",  # Non-greedy match
+        r"Em.Raise_Exception\s*\([^;]+?;",  # Non-greedy match
+        r"Ut\.Raise_Err\s*\([^;]+?;"  # Non-greedy match
     ]
 
     message_patterns = [
-        r"Vmessage\s*:=\s*[^;]+;",
-        r"result\s*:=\s*[^;]+;",
-        r"Omessage\s*:=\s*[^;]+;"
+        r"Vmessage\s*:=\s*[^;]+?;",
+        r"result\s*:=\s*[^;]+?;",
+        r"Omessage\s*:=\s*[^;]+?;"
     ]
 
     # First check for raise patterns
     for pattern in raise_patterns:
-        match = re.search(pattern, content, re.IGNORECASE | re.MULTILINE)
+        match = re.search(pattern, content, re.IGNORECASE | re.MULTILINE | re.DOTALL)
         if match:
             stmt = match.group(0)
             params = parse_error_params(stmt)
@@ -242,7 +261,7 @@ def modify_error_statement(content: str, message_name: str) -> Tuple[str, int, i
 
     # Then check for message patterns
     for pattern in message_patterns:
-        match = re.search(pattern, content, re.IGNORECASE | re.MULTILINE)
+        match = re.search(pattern, content, re.IGNORECASE | re.MULTILINE | re.DOTALL)
         if match:
             stmt = match.group(0)
             params = parse_error_params(stmt)
@@ -250,3 +269,17 @@ def modify_error_statement(content: str, message_name: str) -> Tuple[str, int, i
             return content[:match.start()] + replacement + content[match.end():], match.start(), match.end()
 
     return content, -1, -1
+
+
+def generate_mlm_replacement(message_name: str, original_stmt: str, params: List[str] = None) -> str:
+    """Generate MLM message call with preserved variable name"""
+    var_match = re.match(r'(\w+)\s*:=', original_stmt, re.IGNORECASE)
+    variable_name = var_match.group(1) if var_match else "Omessage"
+
+    if not params:
+        return f"{variable_name} := mlm.Get_Message(i_Module_Code => 'LN', i_Message_Name => '{message_name}')"
+
+    # Clean up parameters and remove any trailing semicolons
+    cleaned_params = [p.rstrip(';').strip() for p in params]
+    param_array = f"array_varchar({', '.join(cleaned_params)})"
+    return f"{variable_name} := mlm.Get_Message(i_Module_Code => 'LN', i_Message_Name => '{message_name}', i_Params => {param_array})"

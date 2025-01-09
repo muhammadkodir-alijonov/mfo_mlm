@@ -21,7 +21,12 @@ def generate_message_name(text: str) -> str:
 
     # 5. Oxirgi _ belgisini olib tashlash
     if truncated_text.endswith('_'):
-        truncated_text = truncated_text[:-1]
+        count = 0
+        for i in range(len(truncated_text)-1,-1,-1):
+            if truncated_text[i].isalnum():
+                break
+            count += 1
+        truncated_text = truncated_text[:-count]
 
     if truncated_text.startswith('_'):
         count = 0
@@ -29,7 +34,7 @@ def generate_message_name(text: str) -> str:
             if i.isalnum():
                 break
             count += 1
-        return truncated_text[count:]
+        truncated_text = truncated_text[count:]
 
     return truncated_text
 
