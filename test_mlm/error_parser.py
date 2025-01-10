@@ -225,12 +225,45 @@ def update_pck_file(file_path: str, message_mappings: dict) -> bool:
 
 
 def generate_mlm_raise_error(message_name: str, params: List[str] = None) -> str:
-    """Generate MLM Raise_Error call replacement"""
+    """Generate MLM Raise_Error call replacement with proper formatting and check for balanced parentheses."""
     if not params:
-        return f"mlm.Raise_Error(i_Module_Code => 'LN', i_Message_Name => '{message_name}')"
+        return f"mlm.Raise_Error(i_Module_Code => 'LN', i_Message_Name => '{message_name}');"
 
-    param_array = f"array_varchar({', '.join(params)})"
-    return f"mlm.Raise_Error(i_Module_Code => 'LN', i_Message_Name => '{message_name}', i_Params => {param_array})"
+    # Clean up parameters, remove any trailing semicolons and ensure proper formatting
+    cleaned_params = [p.rstrip(';').strip() for p in params]
+
+    # Format the parameters into the required structure
+    param_array = f"array_varchar({', '.join(cleaned_params)})"
+
+    # Now handle parentheses checking using stack
+    result = f"mlm.Raise_Error(i_Module_Code => 'LN', i_Message_Name => '{message_name}', i_Params => {param_array});"
+
+    # Stack to track parentheses
+    stack = []
+    final_result = []
+
+    # Iterate through the characters of the result to check parentheses balance
+    for char in result:
+        if char == '(':
+            stack.append(char)
+            final_result.append(char)
+        elif char == ')':
+            if stack:
+                stack.pop()
+                final_result.append(char)
+            else:
+                # Skip unmatched closing parenthesis
+                continue
+        else:
+            final_result.append(char)
+
+    # If the stack is not empty, remove unmatched opening parentheses
+    if stack:
+        final_result = ''.join(final_result).rstrip('(').rstrip(')')
+    else:
+        final_result = ''.join(final_result)
+
+    return final_result
 
 
 def modify_error_statement(content: str, message_name: str) -> Tuple[str, int, int]:
