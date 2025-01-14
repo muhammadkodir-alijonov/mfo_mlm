@@ -2,7 +2,7 @@ import re
 
 def count_dynamic_parameters(error_message: str) -> int:
     count = 0
-    for match in re.finditer(r"\$\d+", error_message):
+    for _ in re.finditer(r"\$\d+", error_message):
         count += 1
     return count
 def generate_message_name(text: str) -> str:
