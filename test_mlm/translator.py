@@ -11,8 +11,8 @@ def escape_sql_quotes(text: str) -> str:
     replacements = {
         "$ ": "$",
         ".": "",
-        "'": "''",  # SQL injection xavfsizligi uchun
-        '"': '""'  # SQL injection xavfsizligi uchun
+        "'": "`",  # SQL injection xavfsizligi uchun
+        '"': '`"'  # SQL injection xavfsizligi uchun
     }
     for old, new in replacements.items():
         text = text.replace(old, new)

@@ -3,5 +3,6 @@
   <component name="Encoding">
     <file url="file://$PROJECT_DIR$/input/Ln_Front.pck" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/input/Ln_Front_Api.pck" charset="windows-1251" />
+    <file url="file://$PROJECT_DIR$/input/Ln_Graph.pck" charset="windows-1251" />
   </component>
 </project>

@@ -48,7 +48,7 @@ def format_error_template(error_message: str, translations: dict, file_name: str
     message_name = generate_message_name(eng)
 
     return f"""
-begin
+    --MUHAMMADKODIR.A
 mlm.save_template(
     i_module_code => 'LN',
     i_message_name => '{message_name}',
@@ -61,6 +61,4 @@ mlm.save_template(
     i_admin_action => mlm_text_t(),
     i_description => '{file_name}:{line_number}'
 );
-commit;
-end;
-/"""
+"""
