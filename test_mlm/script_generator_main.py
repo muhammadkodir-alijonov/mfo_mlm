@@ -4,7 +4,7 @@ import logging
 from config import INPUT_DIR, OUTPUT_DIR
 from file_utils import read_file_with_encodings
 from translator import translate_message
-from template_generator import format_error_template, generate_message_name
+from template_generator import format_error_template
 from script_parser import process_pck_file
 import time
 

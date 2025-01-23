@@ -13,6 +13,7 @@ def clean_quotes(text: str) -> str:
             .replace("(", '')
             .replace(")", '')
             .replace("'", '')
+            .replace("  ", ' ')
             .replace("{", '')
             .replace("}", '')
             .replace('"', '')
@@ -81,7 +82,11 @@ def extract_error_message(stmt: str) -> Optional[str]:
         stmt = re.sub(r'\s+', ' ', stmt)
 
         if 'Em.Raise_Error' in stmt:
-            match = re.search(r"Em\.Raise_Error\s*\(\s*'[^']+'\s*,\s*(.+?)\);?\s*$", stmt)
+            match = re.search(r"Em\.Raise_Error\([^,]+, (.+)\);", stmt)
+            if match:
+                stmt = match.group(1)
+        if 'Em.Raise_Error_If' in stmt:
+            match = re.search(r"Em\.Raise_Error_If\([^,]+, [^,]+, (.+)\);", stmt)
             if match:
                 stmt = match.group(1)
 

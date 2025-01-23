@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 def escape_sql_quotes(text: str) -> str:
     """SQLga mos keladigan format uchun maxsus belgilarni almashtirish."""
     replacements = {
+        "  ": " ",
         "$ ": "$",
         ".": "",
         "'": "`",  # SQL injection xavfsizligi uchun
