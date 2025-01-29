@@ -1,28 +1,6 @@
 import re
-from typing import List, Tuple
-
-
-def clean_quotes(text: str) -> str:
-    """Remove unnecessary quotes and normalize spacing"""
-    return (
-            text.replace('"', '')
-            .replace("''", '')
-            .replace("' ", '')
-            .replace(" '", '')
-            .replace("(", '')
-            .replace(")", '')
-            .replace("'", '')
-            .replace("{", '')
-            .replace("  ", ' ')
-            .replace("}", '')
-            .replace('"', '')
-            .replace(':', '')
-            .strip())
-
-
-def format_parameter(param_num: int) -> str:
-    """Format parameter placeholder consistently"""
-    return f"${param_num}"
+from typing import List
+from script_parser import extract_error_message
 
 
 def process_pck_content(content: str, message_mappings: dict) -> str:
@@ -31,42 +9,6 @@ def process_pck_content(content: str, message_mappings: dict) -> str:
     message_mappings: dict mapping original error messages to their message_names
     """
     modified_content = content
-    offset = 0
-
-    for original_msg, message_name in message_mappings.items():
-        # Find and replace each error message
-        temp_content = modified_content[offset:]
-        new_content, start, end = modify_error_statement(temp_content, message_name)
-
-        if start != -1:
-            modified_content = modified_content[:offset] + new_content
-            offset += end
-
-    return modified_content
-
-
-def update_pck_file(file_path: str, message_mappings: dict) -> bool:
-    """
-    Update PCK file with MLM message calls.
-    Returns True if successful, False otherwise.
-    """
-    try:
-        with open(file_path, 'r', encoding='utf-8') as file:
-            content = file.read()
-
-        modified_content = process_pck_content(content, message_mappings)
-
-        with open(file_path, 'w', encoding='utf-8') as file:
-            file.write(modified_content)
-
-        return True
-    except Exception as e:
-        print(f"Error updating PCK file: {str(e)}")
-        return False
-
-
-def modify_error_statement(content: str, message_name: str) -> Tuple[str, int, int]:
-    """Advanced error statement modification with comprehensive handling"""
     # Expanded error patterns
     error_patterns = [
         r'Raise_Application_Error\s*\(-20000,[^;]+;',
@@ -74,38 +16,44 @@ def modify_error_statement(content: str, message_name: str) -> Tuple[str, int, i
         r'Em\.Raise_Error(?:_If)?\s*\([^;]+;',
         r'\w+message\s*:=\s*[^;]+;',
         r'result\s*:=\s*[^;]+;',
+        r'v_Msg\s*:=\s*[^;]+;',
+        r'o_Err_Msg\s*:=\s*[^;]+;',
         r'o_Error_Msg\s*:=\s*[^;]+;'
     ]
 
-    modified_content = content
-    matches = list(re.finditer('|'.join(error_patterns), content, re.MULTILINE | re.DOTALL | re.IGNORECASE))
+    # Find all error statements in the content
+    matches = list(re.finditer('|'.join(error_patterns), modified_content, flags=re.IGNORECASE | re.DOTALL))
 
-    for match in sorted(matches, key=lambda x: x.start(), reverse=True):
+    # Process matches in reverse order to avoid offset issues
+    for match in reversed(matches):
         stmt = match.group(0)
+        # Extract the original message from the statement
+        original_msg = extract_error_message(stmt)
+        if original_msg in message_mappings:
+            message_name = message_mappings[original_msg]
+            # Determine replacement type
+            if any(pattern in stmt for pattern in ['Raise_Application_Error', 'Ut.Raise_Err', 'Em.Raise_Error']):
+                params = parse_error_params(stmt)
+                replacement = generate_mlm_raise_error(message_name, params)
+            else:
+                params = parse_error_params(stmt)
+                replacement = generate_mlm_replacement(message_name, stmt, params)
+            # Replace the statement
+            modified_content = (
+                    modified_content[:match.start()] +
+                    replacement +
+                    modified_content[match.end():]
+            )
 
-        # Extract parameters and generate MLM replacement
-        params = parse_error_params(stmt)
-
-        if 'Raise_Application_Error' in stmt or 'Ut.Raise_Err' in stmt:
-            replacement = generate_mlm_raise_error(message_name, params)
-        else:
-            replacement = generate_mlm_replacement(message_name, stmt, params)
-
-        modified_content = (
-                modified_content[:match.start()] +
-                replacement +
-                modified_content[match.end():]
-        )
-
-    return modified_content, 0, len(modified_content)
+    return modified_content
 
 
 def parse_error_params(stmt: str) -> List[str]:
     """Comprehensive parameter extraction with advanced parsing"""
     # Expanded exclusion list and more flexible extraction
     exclusion_keywords = [
-        'raise_application_error', 'o_error_msg', 'result', 'raise',
-        'vmessage', 'omessage', '-20000', 'sqlerrm', 'ut.ccrlf'
+        'raise_application_error', 'o_Err_Msg', 'o_Error_Msg','result', 'raise',
+        'vmessage', 'omessage', '-20000'
     ]
 
     # Handle function calls and complex expressions
@@ -151,15 +99,37 @@ def generate_mlm_replacement(message_name: str, original_stmt: str, params: List
 
     # Clean up parameters and remove any assignment operators
     cleaned_params = []
+
     for param in params:
+        # Normalize the parameter
         param = param.strip()
-        # Remove assignment operator if present
+
+        # Remove assignment operators
         if ':=' in param:
             param = param.split(':=')[-1].strip()
-        # Remove any trailing delimiters or whitespace
-        param = re.sub(r'[,\s;]+$', '', param)
-        # Only add non-empty parameters
-        if param and not param.isspace():
+
+        # Remove trailing delimiters and whitespace
+        param = re.sub(r'[,;]+$', '', param).strip()
+
+        # Handle complex function calls with potential trailing comma
+        if param.endswith(','):
+            param = param.rstrip(',').strip()
+
+        # Special handling for replace() function with empty last argument
+        if param.startswith('replace(') and param.endswith(',)'):
+            param = param.replace(',)', ')')
+
+        # Validate parameter
+        if (param and
+                not param.isspace() and
+                param != '()' and
+                param != 'null'):
+
+            # Additional cleanup for specific function calls
+            if param.startswith('replace('):
+                # Ensure replace() function is properly formatted
+                param = re.sub(r',\s*\)', ')', param)
+
             cleaned_params.append(param)
 
     # If cleaned_params is empty after filtering, exclude i_Params entirely
@@ -168,8 +138,31 @@ def generate_mlm_replacement(message_name: str, original_stmt: str, params: List
 
     # Join parameters with clean formatting
     param_array = f"array_varchar2({', '.join(cleaned_params)})"
+    result = f"{variable_name} := mlm.Get_Message(i_Module_Code => 'LN', i_Message_Name => '{message_name}', i_Params => {param_array});"
 
-    return f"{variable_name} := mlm.Get_Message(i_Module_Code => 'LN', i_Message_Name => '{message_name}', i_Params => {param_array});"
+    stack = []
+    final_result = []
+
+    # Iterate through the characters of the result to check parentheses balance
+    for char in result:
+        if char == '(':
+            stack.append(char)
+            final_result.append(char)
+        elif char == ')':
+            if stack:
+                stack.pop()
+                final_result.append(char)
+            else:
+                # Skip unmatched closing parenthesis
+                continue
+        else:
+            final_result.append(char)
+
+    # Clean up any trailing commas before closing parentheses
+    result = ''.join(final_result)
+    result = re.sub(r',\s*\)', ')', result)  # Remove any trailing comma before closing parenthesis
+
+    return result
 
 
 def generate_mlm_raise_error(message_name: str, params: List[str] = None) -> str:
@@ -179,11 +172,37 @@ def generate_mlm_raise_error(message_name: str, params: List[str] = None) -> str
 
     # Clean up parameters and remove any assignment operators
     cleaned_params = []
+
     for param in params:
-        param = param.strip().rstrip(';')
+        # Normalize the parameter
+        param = param.strip()
+
+        # Remove assignment operators
         if ':=' in param:
             param = param.split(':=')[-1].strip()
-        if param and not param.isspace():
+
+        # Remove trailing delimiters and whitespace
+        param = re.sub(r'[,;]+$', '', param).strip()
+
+        # Handle complex function calls with potential trailing comma
+        if param.endswith(','):
+            param = param.rstrip(',').strip()
+
+        # Special handling for replace() function with empty last argument
+        if param.startswith('replace(') and param.endswith(',)'):
+            param = param.replace(',)', ')')
+
+        # Validate parameter
+        if (param and
+                not param.isspace() and
+                param != '()' and
+                param != 'null'):
+
+            # Additional cleanup for specific function calls
+            if param.startswith('replace('):
+                # Ensure replace() function is properly formatted
+                param = re.sub(r',\s*\)', ')', param)
+
             cleaned_params.append(param)
 
     # Format the parameters into the required structure without trailing comma

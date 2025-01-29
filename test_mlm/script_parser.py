@@ -45,6 +45,7 @@ def process_pck_file(content: str) -> List[Tuple[str, int]]:
                 "Raise_Application_Error",
                 "Vmessage :=",
                 "result :=",
+                "v_Msg :=",
                 "o_Error_Msg :=",
                 "Ut.Raise_Err",
                 "Omessage :=",
@@ -81,6 +82,10 @@ def extract_error_message(stmt: str) -> Optional[str]:
         stmt = stmt.replace('\n', ' ').replace('\r', ' ')
         stmt = re.sub(r'\s+', ' ', stmt)
 
+        # Skip simple numeric assignments first (e.g. result := '1')
+        if re.search(r":=\s*'\d+'\s*;", stmt, re.IGNORECASE):
+            return None
+
         if 'Em.Raise_Error' in stmt:
             match = re.search(r"Em\.Raise_Error\([^,]+, (.+)\);", stmt)
             if match:
@@ -90,7 +95,7 @@ def extract_error_message(stmt: str) -> Optional[str]:
             if match:
                 stmt = match.group(1)
 
-        stmt = re.sub(r'^(return|vMessage|result|Omessage|o_Error_Msg)\s*:=\s*', '', stmt, flags=re.IGNORECASE)
+        stmt = re.sub(r'^(return|vMessage|result|Omessage|o_Error_Msg|v_Msg)\s*:=\s*', '', stmt, flags=re.IGNORECASE)
         stmt = re.sub(r'return\s+\w+\s*;$', '', stmt, flags=re.IGNORECASE)
         stmt = re.sub(r'raise\s+\w+\s*;$', '', stmt, flags=re.IGNORECASE)
 
@@ -104,6 +109,10 @@ def extract_error_message(stmt: str) -> Optional[str]:
                 message_parts.append(format_parameter(param_counter))
                 param_counter += 1
                 continue
+            elif 'replace' in part:
+                message_parts.append(format_parameter(param_counter))
+                param_counter += 1
+                continue
 
             quote_match = re.search(r"'([^']+)'", part)
             if quote_match:
@@ -114,12 +123,18 @@ def extract_error_message(stmt: str) -> Optional[str]:
                 clean_part = clean_quotes(part)
                 if clean_part and not clean_part.isspace():
                     if not any(keyword in clean_part.lower() for keyword in
-                               ['raise_application_error', 'result', 'raise', 'vmessage', 'omessage', 'o_error_msg']):
+                               ['raise_application_error', 'result', 'raise', 'vmessage', 'omessage', 'o_error_msg',
+                                'v_Msg', '-20000']):
                         message_parts.append(format_parameter(param_counter))
                         param_counter += 1
 
         result = ' '.join(part for part in message_parts if part)
         result = re.sub(r'\s+', ' ', result).strip()
+
+        # Final check for numeric-only messages
+        if result and re.fullmatch(r'\d+', result):
+            return None
+
         return result if result else None
 
     except Exception as e:

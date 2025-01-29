@@ -8,7 +8,6 @@ from template_generator import format_error_template
 from script_parser import process_pck_file
 import time
 
-
 def main():
     """Main function to generate SQL templates from PCK files."""
     start = time.time()

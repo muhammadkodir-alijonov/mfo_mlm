@@ -1,6 +1,7 @@
 import logging
 from typing import Dict, Optional
 from googletrans import Translator
+from httpcore import SyncHTTPProxy
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -32,8 +33,10 @@ def safe_translate(translator: Translator, text: str, src: str, dest: str) -> Op
 
 def translate_message(message: str) -> Dict[str, str]:
     """Berilgan xabarni bir nechta tilda tarjima qilish."""
-    translator = Translator()
-    translations = {'RUS': message}
+    http_proxy = SyncHTTPProxy((b"http", b"inet.fido.uz", 3128, b""))
+    proxies = {"http": http_proxy, "https": http_proxy}
+    translator = Translator(proxies=proxies)
+    translations = {"RUS": message}
 
     # Tarjima parametrlarini saqlash
     translation_params = {
