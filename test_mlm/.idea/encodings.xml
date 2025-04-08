@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="Encoding">
-    <file url="file://$PROJECT_DIR$/input/Ln_Front.pck" charset="UTF-8" />
-    <file url="file://$PROJECT_DIR$/input/Ln_Front_Api.pck" charset="windows-1251" />
-    <file url="file://$PROJECT_DIR$/input/Ln_Graph.pck" charset="windows-1251" />
+  <component name="Encoding" defaultCharsetForPropertiesFiles="windows-1251">
+    <file url="file://$PROJECT_DIR$/core/config.py" charset="windows-1251" />
+    <file url="file://$PROJECT_DIR$/core/input/Ln_Bo_Kernel.pck" charset="windows-1251" />
+    <file url="file://$PROJECT_DIR$/output/Ln_Bo_Kernel_mlm.sql" charset="UTF-8" />
   </component>
 </project>
