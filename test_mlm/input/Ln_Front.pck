@@ -1,1 +1,0 @@
-mlm.Raise_Error(i_Module_Code => 'LN', i_Message_Name => 'THE_SPECIFIED_PLACE_OF_WORK_IN_THE_APPLICATION_DOE', i_Params => array_varchar2(vClaim_Apx.Card_Type, sqlerrm));
